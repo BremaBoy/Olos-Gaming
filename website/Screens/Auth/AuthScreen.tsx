@@ -2,11 +2,20 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { useAuth } from '@/context/AuthContext';
 
 export default function AuthScreen() {
+  const router = useRouter();
+  const { login: authLogin, isLoggedIn, isLoading: isAuthLoading } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Redirect if already logged in
   const [formData, setFormData] = useState({
     fullName: '',
     username: '',
@@ -15,11 +24,16 @@ export default function AuthScreen() {
     confirmPassword: ''
   });
 
+  const API_BASE_URL = 'http://localhost:5000/api';
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
+    // Clear errors when user types
+    setServerError(null);
+    setSuccessMessage(null);
   };
 
   const isFieldValid = (name: string) => {
@@ -31,9 +45,11 @@ export default function AuthScreen() {
     return value.trim() !== '';
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setShowErrors(true);
+    setServerError(null);
+    setSuccessMessage(null);
     
     const requiredFields = isSignUp 
       ? ['fullName', 'username', 'email', 'password', 'confirmPassword']
@@ -43,10 +59,77 @@ export default function AuthScreen() {
     const passwordsMatch = isSignUp ? formData.password === formData.confirmPassword : true;
 
     if (allFilled && passwordsMatch) {
-      console.log('Form submitted:', formData);
+      setIsLoading(true);
+      try {
+        const endpoint = isSignUp ? '/auth/signup' : '/auth/login';
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(isSignUp ? {
+            fullName: formData.fullName,
+            username: formData.username,
+            email: formData.email,
+            password: formData.password
+          } : {
+            email: formData.email,
+            password: formData.password
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Something went wrong');
+        }
+
+        setSuccessMessage(isSignUp ? 'Registration successful! You can now sign in.' : 'Login successful!');
+        if (!isSignUp) {
+          // Store session in global context
+          authLogin({ 
+            user: {
+              id: data.user.id,
+              email: data.user.email,
+              fullName: data.user.user_metadata?.full_name,
+              username: data.user.user_metadata?.username
+            }, 
+            session: data.session 
+          });
+          
+          // Redirect to home after 1.5s
+          setTimeout(() => {
+            router.push('/');
+          }, 1500);
+        } else {
+          // Switch to sign in after successful signup
+          setTimeout(() => setIsSignUp(false), 2000);
+        }
+      } catch (error: any) {
+        setServerError(error.message);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
+  // Redirect if already logged in
+  React.useEffect(() => {
+    if (!isAuthLoading && isLoggedIn) {
+      router.push('/');
+    }
+  }, [isLoggedIn, isAuthLoading, router]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-[#050B18] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-olos-blue/30 border-t-olos-blue rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (isLoggedIn) return null;
+  
   return (
     <div className="min-h-screen bg-[#050B18] text-white selection:bg-olos-blue/30 overflow-y-auto pb-12">
       <Navbar />
@@ -88,6 +171,17 @@ export default function AuthScreen() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="w-full space-y-6">
+              {serverError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-500 text-sm font-medium animate-shake">
+                  {serverError}
+                </div>
+              )}
+              {successMessage && (
+                <div className="p-4 bg-green-500/10 border border-green-500/50 rounded-xl text-green-500 text-sm font-medium">
+                  {successMessage}
+                </div>
+              )}
+
               {isSignUp && (
                 <>
                   <div className="space-y-2">
@@ -95,10 +189,11 @@ export default function AuthScreen() {
                     <input 
                       type="text" 
                       name="fullName"
+                      disabled={isLoading}
                       value={formData.fullName}
                       onChange={handleChange}
                       placeholder="John Doe" 
-                      className={`w-full h-12 bg-black border ${!isFieldValid('fullName') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all`}
+                      className={`w-full h-12 bg-black border ${!isFieldValid('fullName') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all disabled:opacity-50`}
                     />
                   </div>
                   <div className="space-y-2">
@@ -106,10 +201,11 @@ export default function AuthScreen() {
                     <input 
                       type="text" 
                       name="username"
+                      disabled={isLoading}
                       value={formData.username}
                       onChange={handleChange}
                       placeholder="johndoe123" 
-                      className={`w-full h-12 bg-black border ${!isFieldValid('username') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all`}
+                      className={`w-full h-12 bg-black border ${!isFieldValid('username') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all disabled:opacity-50`}
                     />
                   </div>
                 </>
@@ -120,10 +216,11 @@ export default function AuthScreen() {
                 <input 
                   type="email" 
                   name="email"
+                  disabled={isLoading}
                   value={formData.email}
                   onChange={handleChange}
                   placeholder="player@example.com" 
-                  className={`w-full h-12 bg-black border ${!isFieldValid('email') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all`}
+                  className={`w-full h-12 bg-black border ${!isFieldValid('email') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all disabled:opacity-50`}
                 />
               </div>
 
@@ -132,10 +229,11 @@ export default function AuthScreen() {
                 <input 
                   type="password" 
                   name="password"
+                  disabled={isLoading}
                   value={formData.password}
                   onChange={handleChange}
                   placeholder="********" 
-                  className={`w-full h-12 bg-black border ${!isFieldValid('password') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all`}
+                  className={`w-full h-12 bg-black border ${!isFieldValid('password') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all disabled:opacity-50`}
                 />
                 {isSignUp && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 px-1">
@@ -154,10 +252,11 @@ export default function AuthScreen() {
                   <input 
                     type="password" 
                     name="confirmPassword"
+                    disabled={isLoading}
                     value={formData.confirmPassword}
                     onChange={handleChange}
                     placeholder="********" 
-                    className={`w-full h-12 bg-black border ${!isFieldValid('confirmPassword') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all`}
+                    className={`w-full h-12 bg-black border ${!isFieldValid('confirmPassword') ? 'border-red-500' : 'border-[#3B82F6]/30'} rounded-xl px-4 text-sm text-gray-300 focus:outline-none focus:border-[#3B82F6] transition-all disabled:opacity-50`}
                   />
                   {formData.confirmPassword && (
                     <div className="mt-2 px-1">
@@ -169,12 +268,23 @@ export default function AuthScreen() {
 
               {!isSignUp && (
                 <div className="flex justify-end">
-                  <button type="button" className="text-xs font-bold text-gray-500 hover:text-white transition-colors">Forgot Password?</button>
+                  <button type="button" disabled={isLoading} className="text-xs font-bold text-gray-500 hover:text-white transition-colors disabled:opacity-50">Forgot Password?</button>
                 </div>
               )}
 
-              <button type="submit" className="w-full h-14 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-blue-500/20">
-                {isSignUp ? 'Sign Up' : 'Sign In'}
+              <button 
+                type="submit" 
+                disabled={isLoading}
+                className="w-full h-14 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-blue-500/20 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  isSignUp ? 'Sign Up' : 'Sign In'
+                )}
               </button>
             </form>
 

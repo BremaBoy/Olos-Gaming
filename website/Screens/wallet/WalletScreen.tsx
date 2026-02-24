@@ -1,11 +1,31 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { useAuth } from '@/context/AuthContext';
 
 export default function WalletScreen() {
+  const router = useRouter();
+  const { isLoggedIn, isLoading } = useAuth();
   const [showBalance, setShowBalance] = useState(true);
+
+  useEffect(() => {
+    if (!isLoading && !isLoggedIn) {
+      router.push('/auth');
+    }
+  }, [isLoggedIn, isLoading, router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#050B18] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-olos-blue/30 border-t-olos-blue rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) return null;
 
   return (
     <div className="min-h-screen bg-[#050B18] text-white selection:bg-olos-blue/30 overflow-x-hidden pb-24 md:pb-12">

@@ -1,10 +1,31 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { isLoggedIn, user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && !isLoggedIn) {
+      router.push('/auth');
+    }
+  }, [isLoggedIn, isLoading, router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#050B18] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-olos-blue/30 border-t-olos-blue rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) return null;
+
   return (
     <div className="min-h-screen bg-[#050B18] text-white selection:bg-olos-blue/30 overflow-x-hidden">
       <Navbar />
@@ -13,8 +34,10 @@ export default function ProfileScreen() {
         {/* Profile Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12">
           <div>
-            <h1 className="text-4xl font-black tracking-tight uppercase mb-1">Player 72740</h1>
-            <p className="text-gray-500 font-bold tracking-tight">auwalrabiujamo@gmail.com</p>
+            <h1 className="text-4xl font-black tracking-tight uppercase mb-1">
+              {user?.username || user?.email?.split('@')[0] || 'Player'}
+            </h1>
+            <p className="text-gray-500 font-bold tracking-tight">{user?.email}</p>
           </div>
           <button className="px-10 py-3.5 rounded-xl bg-[#3B82F6] hover:bg-[#2563EB] text-white text-[13px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-lg shadow-blue-500/20">
             Find a Match
