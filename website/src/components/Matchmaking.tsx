@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useWallet } from "@/context/WalletContext";
+import { useAuth } from "@/context/AuthContext";
 
 type MatchmakingState = "SEARCHING" | "FOUND" | "WAITING" | "COUNTDOWN";
 
@@ -26,11 +27,11 @@ export default function Matchmaking({
   onReady,
   onComplete,
 }: MatchmakingProps) {
+  const { user, isLoading: authLoading } = useAuth();
   const { balance, refreshBalance } = useWallet();
   console.log("[Matchmaking] Component Rendered", { game: game.slug, stake });
   const [state, setState] = useState<MatchmakingState>("SEARCHING");
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [countdown, setCountdown] = useState(10);
   const [matchId, setMatchId] = useState<string | null>(null);
   const [opponent, setOpponent] = useState<{ id: string; username: string } | null>(null);
@@ -38,17 +39,15 @@ export default function Matchmaking({
   const [opponentReady, setOpponentReady] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error) console.error("[Matchmaking] Auth Error:", error.message);
-      if (data.user) {
-        console.log("[Matchmaking] User loaded:", data.user.id);
-        setUser(data.user);
-      } else {
-        console.warn("[Matchmaking] No user found - is the user logged in?");
-        setError("You must be logged in to play 1v1");
-      }
-    });
-  }, []);
+    if (authLoading) return;
+    
+    if (!user) {
+      console.warn("[Matchmaking] No user found - is the user logged in?");
+      setError("You must be logged in to play 1v1");
+    } else {
+      console.log("[Matchmaking] User validated from context:", user.id);
+    }
+  }, [user, authLoading]);
 
   useEffect(() => {
     console.log("[Matchmaking] Effect trigger, user state:", user?.id || "null");
@@ -244,10 +243,29 @@ export default function Matchmaking({
 
   // Effect for WAITING -> COUNTDOWN transition
   useEffect(() => {
-    if (playerReady && opponentReady) {
-      setState("COUNTDOWN");
+    if (playerReady && opponentReady && matchId) {
+      const syncCountdown = async () => {
+        const { data } = await supabase
+          .from('match_events')
+          .select('created_at')
+          .eq('match_id', matchId)
+          .eq('event_type', 'ready')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (data) {
+          const startTime = new Date(data.created_at).getTime();
+          const now = new Date().getTime();
+          const elapsed = Math.floor((now - startTime) / 1000);
+          setCountdown(Math.max(1, 10 - elapsed));
+        }
+        setState("COUNTDOWN");
+      };
+      
+      syncCountdown();
     }
-  }, [playerReady, opponentReady]);
+  }, [playerReady, opponentReady, matchId]);
 
   // Handle countdown timer
   useEffect(() => {

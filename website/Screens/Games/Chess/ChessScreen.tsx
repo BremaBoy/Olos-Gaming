@@ -409,16 +409,16 @@ export default function ChessScreen() {
     }
   };
 
+  // Pre-game state is now handled by GamesScreen.tsx global matchmaking
+  // If we land here without matchId in 1v1 mode, we just show a message or redirect back
   if (mode === '1v1' && !matchId) {
     return (
-      <div className="min-h-screen bg-[#0B1121] flex items-center justify-center p-4">
-        <Matchmaking 
-          game={{ slug: 'chess', title: 'Chess' }} 
-          stake={10} 
-          winnerReceives={18} 
-          onCancel={() => window.location.href = '/games'}
-          onComplete={(id) => setMatchId(id)}
-        />
+      <div className="min-h-screen bg-[#0B1121] flex flex-col items-center justify-center p-4">
+        <Navbar />
+        <h2 className="text-xl font-bold text-white mb-4">No active match found</h2>
+        <Link href="/games" className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold">
+          Back to Games
+        </Link>
       </div>
     );
   }
@@ -520,6 +520,48 @@ export default function ChessScreen() {
             ? "10 minutes per player · Timer runs while it's your turn" 
             : "Click a piece to select · Click a green dot to move · Auto-promotes Pawn → Queen"}
         </p>
+
+        {/* Rules Section */}
+        <div className="w-full max-w-[580px] bg-[#0d1326] border border-white/5 rounded-2xl p-8 mt-12 animate-fade-in">
+          <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 text-[10px]">?</span>
+            Game Rules
+          </h3>
+          
+          <div className="space-y-6">
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-blue-400 uppercase mb-1">Winning Conditions</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Deliver checkmate to the opponent's king. If your opponent runs out of time, you win automatically.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-blue-400 uppercase mb-1">Match Duration</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Total time is 10 minutes per player. Your clock only runs during your turn.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-blue-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-blue-400 uppercase mb-1">Special Moves</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Pawns automatically promote to Queens when reaching the final rank. Castling and En Passant are currently simplified.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 pt-4 border-t border-white/5">
+              <div className="w-1 h-1 rounded-full bg-yellow-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-yellow-500 uppercase mb-1">Fair Play</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Disconnecting for more than 2 minutes or closing the tab counts as a forfeit.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

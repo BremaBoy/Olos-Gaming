@@ -337,23 +337,55 @@ BEGIN
 
     -- Check for timeout
     IF v_p1_new_time <= 0 OR v_p2_new_time <= 0 THEN
-        UPDATE public.matches 
-        SET 
-            player1_time_remaining = GREATEST(0, v_p1_new_time),
-            player2_time_remaining = GREATEST(0, v_p2_new_time),
-            status = 'finished',
-            winner_id = (CASE WHEN v_p1_new_time <= 0 THEN player2_id ELSE player1_id END),
-            last_move_timestamp = NOW()
-        WHERE id = p_match_id;
-        
-        RETURN jsonb_build_object('status', 'timeout', 'winner_id', (CASE WHEN v_p1_new_time <= 0 THEN v_match.player2_id ELSE v_match.player1_id END));
+        IF v_match.game_type = 'snake' THEN
+            UPDATE public.matches 
+            SET 
+                player1_time_remaining = 0,
+                player2_time_remaining = 0,
+                status = 'finished',
+                winner_id = (CASE 
+                    WHEN player1_score > player2_score THEN player1_id 
+                    WHEN player2_score > player1_score THEN player2_id 
+                    ELSE NULL 
+                END),
+                last_move_timestamp = NOW()
+            WHERE id = p_match_id;
+            
+            -- Release winnings if not a draw
+            IF v_match.player1_score > v_match.player2_score THEN
+                PERFORM public.release_winnings(p_match_id, v_match.player1_id);
+            ELSIF v_match.player2_score > v_match.player1_score THEN
+                PERFORM public.release_winnings(p_match_id, v_match.player2_id);
+            END IF;
+
+            RETURN jsonb_build_object(
+                'status', 'finished', 
+                'reason', 'timer_expired',
+                'p1_score', v_match.player1_score,
+                'p2_score', v_match.player2_score
+            );
+        ELSE
+            -- Turn-based timeout (Chess/Checkers)
+            UPDATE public.matches 
+            SET 
+                player1_time_remaining = GREATEST(0, v_p1_new_time),
+                player2_time_remaining = GREATEST(0, v_p2_new_time),
+                status = 'finished',
+                winner_id = (CASE WHEN v_p1_new_time <= 0 THEN player2_id ELSE player1_id END),
+                last_move_timestamp = NOW()
+            WHERE id = p_match_id;
+            
+            PERFORM public.release_winnings(p_match_id, (CASE WHEN v_p1_new_time <= 0 THEN v_match.player2_id ELSE v_match.player1_id END));
+
+            RETURN jsonb_build_object('status', 'timeout', 'winner_id', (CASE WHEN v_p1_new_time <= 0 THEN v_match.player2_id ELSE v_match.player1_id END));
+        END IF;
     END IF;
 
     -- Update timers
     UPDATE public.matches 
     SET 
         player1_time_remaining = v_p1_new_time,
-        player2_time_remaining = v_p2_new_time,
+        player2_time_remaining = (CASE WHEN game_type = 'snake' THEN v_p1_new_time ELSE v_p2_new_time END),
         last_move_timestamp = NOW()
     WHERE id = p_match_id;
 
@@ -416,9 +448,12 @@ CREATE TABLE IF NOT EXISTS public.wallets (
 
 -- RLS for wallets
 ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can view their own wallet" ON public.wallets;
 CREATE POLICY "Users can view their own wallet" ON public.wallets
     FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert their own wallet" ON public.wallets;
+CREATE POLICY "Users can insert their own wallet" ON public.wallets
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- FUNCTION: lock_stake
 CREATE OR REPLACE FUNCTION public.lock_stake(
@@ -495,3 +530,66 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user_wallet();
+
+-- STEP 7: FORFEIT & REMATCH LOGIC
+
+CREATE OR REPLACE FUNCTION public.forfeit_match(
+    p_match_id UUID,
+    p_player_id UUID
+) RETURNS JSONB AS $forfeit_match_tag$
+DECLARE
+    v_match RECORD;
+    v_opponent_id UUID;
+BEGIN
+    SELECT * INTO v_match FROM public.matches WHERE id = p_match_id FOR UPDATE;
+    
+    IF v_match.status != 'active' AND v_match.status != 'reconnecting' THEN
+        RETURN jsonb_build_object('error', 'Match is not active');
+    END IF;
+
+    v_opponent_id := (CASE WHEN v_match.player1_id = p_player_id THEN v_match.player2_id ELSE v_match.player1_id END);
+
+    UPDATE public.matches 
+    SET 
+        status = 'finished',
+        winner_id = v_opponent_id,
+        last_move_timestamp = NOW()
+    WHERE id = p_match_id;
+
+    -- Release winnings to opponent
+    PERFORM public.release_winnings(p_match_id, v_opponent_id);
+
+    -- Log forfeit event
+    INSERT INTO public.match_events (match_id, player_id, event_type, payload)
+    VALUES (p_match_id, p_player_id, 'forfeit', jsonb_build_object('forfeited_by', p_player_id));
+
+    RETURN jsonb_build_object('status', 'success', 'winner_id', v_opponent_id);
+END;
+$forfeit_match_tag$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.trigger_rematch(
+    p_match_id UUID
+) RETURNS JSONB AS $trigger_rematch_tag$
+DECLARE
+    v_new_apple_x INTEGER;
+    v_new_apple_y INTEGER;
+BEGIN
+    v_new_apple_x := floor(random() * 20);
+    v_new_apple_y := floor(random() * 20);
+
+    UPDATE public.matches 
+    SET 
+        player1_score = 0,
+        player2_score = 0,
+        player1_time_remaining = 600,
+        player2_time_remaining = 600,
+        status = 'active',
+        winner_id = NULL,
+        current_apple_pos = jsonb_build_object('x', v_new_apple_x, 'y', v_new_apple_y),
+        last_move_timestamp = NOW(),
+        created_at = NOW() -- Reset match age for reconnection logic
+    WHERE id = p_match_id;
+
+    RETURN jsonb_build_object('status', 'success');
+END;
+$trigger_rematch_tag$ LANGUAGE plpgsql SECURITY DEFINER;

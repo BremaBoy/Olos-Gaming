@@ -13,14 +13,22 @@ interface WalletContextType {
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [balance, setBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchBalance = async (userId: string) => {
+    if (!userId) return;
     setIsLoading(true);
     console.log('[WalletContext] Fetching balance for:', userId);
+    
     try {
+      // Verify session state
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        console.warn('[WalletContext] No active session found when fetching balance');
+      }
+
       const { data, error } = await supabase
         .from('wallets')
         .select('balance')
@@ -29,29 +37,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          console.warn('[WalletContext] Wallet missing, creating one...');
+          console.warn('[WalletContext] Wallet missing, attempting to create...');
           const { data: newData, error: insertError } = await supabase
             .from('wallets')
             .insert({ user_id: userId })
             .select()
             .single();
-          if (insertError) throw insertError;
-          if (newData) setBalance(Number(newData.balance));
+          
+          if (insertError) {
+            // Handle race condition: wallet created by another process/tab
+            if (insertError.code === '23505') {
+              console.log('[WalletContext] Wallet was created concurrently, re-fetching...');
+              return fetchBalance(userId);
+            }
+
+            console.error('[WalletContext] Error creating wallet. Code:', insertError.code);
+            console.error('[WalletContext] Error Message:', insertError.message);
+            console.error('[WalletContext] Error Details:', insertError.details);
+            throw insertError;
+          }
+          if (newData) {
+            console.log('[WalletContext] Wallet created successfully:', newData.balance);
+            setBalance(Number(newData.balance));
+          }
         } else {
+          console.error('[WalletContext] Supabase fetch error. Code:', error.code);
+          console.error('[WalletContext] Message:', error.message);
           throw error;
         }
       } else if (data) {
         console.log('[WalletContext] Balance fetched:', data.balance);
         setBalance(Number(data.balance));
       }
-    } catch (error) {
-      console.error('[WalletContext] Error fetching balance:', error);
+    } catch (err: any) {
+      console.error('[WalletContext] Detailed error catch:', {
+        message: err.message,
+        code: err.code,
+        fullError: String(err)
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    // Wait for auth context to determine if user is logged in
+    if (authLoading) return;
+
     if (!user) {
       setBalance(0);
       setIsLoading(false);
@@ -77,7 +109,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   return (
     <WalletContext.Provider value={{ 

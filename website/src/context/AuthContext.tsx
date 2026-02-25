@@ -32,27 +32,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const savedSession = localStorage.getItem('olos_session');
 
     const initAuth = async () => {
-      if (savedUser && savedSession) {
-        try {
-          const parsedUser = JSON.parse(savedUser);
-          const parsedSession = JSON.parse(savedSession);
-          
-          // Sync with Supabase client
-          if (parsedSession.access_token && parsedSession.refresh_token) {
-            await supabase.auth.setSession({
-              access_token: parsedSession.access_token,
-              refresh_token: parsedSession.refresh_token
-            });
-          }
-
-          setUser(parsedUser);
-          setSession(parsedSession);
-        } catch (e) {
-          console.error('Failed to parse saved auth state', e);
-          localStorage.removeItem('olos_user');
-          localStorage.removeItem('olos_session');
+      // Get current session from Supabase SDK
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      
+      if (currentSession) {
+        // Double check validity with getUser()
+        const { data: { user: verifiedUser }, error } = await supabase.auth.getUser();
+        
+        if (!error && verifiedUser) {
+          console.log('[AuthContext] Session verified for:', verifiedUser.email);
+          setUser({
+            id: verifiedUser.id,
+            email: verifiedUser.email!,
+            // Re-fetch additional data if needed or use metadata
+            fullName: verifiedUser.user_metadata?.full_name,
+            username: verifiedUser.user_metadata?.username
+          });
+          setSession(currentSession);
+          setIsLoading(false);
+          return;
         }
       }
+
+      // If we reach here, session is missing or invalid
+      // Check if we HAD a saved user to decide if we need to purge
+      if (savedUser || savedSession) {
+        console.warn('[AuthContext] Session invalid or expired. Purging state...');
+        localStorage.removeItem('olos_user');
+        localStorage.removeItem('olos_session');
+        await supabase.auth.signOut();
+      }
+      
+      setUser(null);
+      setSession(null);
       setIsLoading(false);
     };
 

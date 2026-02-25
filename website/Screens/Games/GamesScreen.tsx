@@ -5,6 +5,8 @@ import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import StakeSelection from "@/components/StakeSelection";
 import Matchmaking from "@/components/Matchmaking";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 type FilterType = "All" | "Solo" | "1v1";
 
@@ -156,10 +158,20 @@ function GameCard({
 }
 
 export default function GamesScreen() {
+  const { isLoggedIn } = useAuth();
+  const router = useRouter();
   const [filter, setFilter] = useState<FilterType>("All");
   const [selectedGameForStake, setSelectedGameForStake] = useState<Game | null>(null);
   const [matchmakingActive, setMatchmakingActive] = useState(false);
   const [activeStake, setActiveStake] = useState(0);
+
+  const handleSelect1v1 = (game: Game) => {
+    if (!isLoggedIn) {
+      router.push("/auth");
+      return;
+    }
+    setSelectedGameForStake(game);
+  };
 
   const visible = GAMES.filter(
     (g) => filter === "All" || g.modes.includes(filter)
@@ -170,10 +182,9 @@ export default function GamesScreen() {
     setMatchmakingActive(true);
   };
 
-  const handleMatchmakingComplete = () => {
+  const handleMatchmakingComplete = (mId: string) => {
     alert(`Game starting now for ${selectedGameForStake?.title}!`);
-    // Future: redirect to the actual game page with 1v1 config
-    location.href = `/games/${selectedGameForStake?.slug}?mode=1v1&stake=${activeStake}`;
+    location.href = `/games/${selectedGameForStake?.slug}?mode=1v1&stake=${activeStake}&matchId=${mId}`;
   };
 
   console.log("[GamesScreen] State:", { matchmakingActive, selectedGame: selectedGameForStake?.slug });
@@ -282,7 +293,7 @@ export default function GamesScreen() {
                 <GameCard 
                   key={game.slug} 
                   game={game} 
-                  onSelect1v1={(g) => setSelectedGameForStake(g)}
+                  onSelect1v1={handleSelect1v1}
                 />
               ))}
             </div>

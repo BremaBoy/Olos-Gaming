@@ -394,16 +394,15 @@ export default function CheckersScreen() {
     }
   }, [status, aiThinking, checkEnd, mode, playerColor, matchId]);
 
+  // Pre-game state is now handled by GamesScreen.tsx global matchmaking
   if (mode === '1v1' && !matchId) {
     return (
-      <div className="min-h-screen bg-[#0B1121] flex items-center justify-center p-4">
-        <Matchmaking 
-          game={{ slug: 'checkers', title: 'Checkers' }} 
-          stake={10} 
-          winnerReceives={18} 
-          onCancel={() => window.location.href = '/games'}
-          onComplete={(id) => setMatchId(id)}
-        />
+      <div className="min-h-screen bg-[#0B1121] flex flex-col items-center justify-center p-4">
+        <Navbar />
+        <h2 className="text-xl font-bold text-white mb-4">No active match found</h2>
+        <Link href="/games" className="px-6 py-2 rounded-lg bg-red-600 text-white font-bold">
+          Back to Games
+        </Link>
       </div>
     );
   }
@@ -510,6 +509,48 @@ export default function CheckersScreen() {
             ? "10 minutes per player · Captures are mandatory · Kings can move backwards" 
             : "Click a red piece · Green dots = valid moves · Captures are mandatory · Kings can move backwards"}
         </p>
+
+        {/* Rules Section */}
+        <div className="w-full max-w-[600px] bg-[#0d1326] border border-white/5 rounded-2xl p-8 mt-12 animate-fade-in">
+          <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 text-[10px]">?</span>
+            Game Rules
+          </h3>
+          
+          <div className="space-y-6">
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-red-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-red-500 uppercase mb-1">Winning Conditions</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Capture all of your opponent's pieces or block them so they cannot make a move.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-red-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-red-500 uppercase mb-1">Mandatory Captures</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium italic">If you can jump over an opponent's piece to capture it, you MUST do so. This is a standard rule of competitive checkers.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="w-1 h-1 rounded-full bg-red-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-red-500 uppercase mb-1">Kinging</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">When a piece reaches the opposite side, it becomes a King and can move both forwards and backwards.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 pt-4 border-t border-white/5">
+              <div className="w-1 h-1 rounded-full bg-yellow-500 mt-2.5 shrink-0" />
+              <div>
+                <h4 className="text-[11px] font-black text-yellow-500 uppercase mb-1">1v1 Timing</h4>
+                <p className="text-xs text-gray-400 leading-relaxed font-medium">Each player has 10 minutes total. Running out of time results in an immediate loss.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
