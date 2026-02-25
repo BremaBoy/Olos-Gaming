@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 const COLS = 20;
 const ROWS = 20;
@@ -18,6 +20,10 @@ function rnd(max: number) {
 }
 
 export default function SnakeScreen() {
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode") || "Solo";
+  const matchId = searchParams.get("matchId");
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef({
     snake: [{ x: 10, y: 10 }] as Pos[],
@@ -27,11 +33,73 @@ export default function SnakeScreen() {
     score: 0,
     alive: true,
     started: false,
+    opponentScore: 0,
+    p1_time: 600,
+    p2_time: 600,
   });
+
   const [score, setScore] = useState(0);
+  const [opponentScore, setOpponentScore] = useState(0);
+  const [p1Time, setP1Time] = useState(600);
+  const [p2Time, setP2Time] = useState(600);
   const [alive, setAlive] = useState(true);
   const [started, setStarted] = useState(false);
   const loopRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchMatchState = useCallback(async () => {
+    if (!matchId) return;
+    const { data } = await supabase.from('matches').select('*').eq('id', matchId).single();
+    if (data) {
+      const s = stateRef.current;
+      s.food = data.current_apple_pos;
+      s.score = data.player1_score; // Needs to be context aware
+      s.opponentScore = data.player2_score;
+      s.p1_time = data.player1_time_remaining;
+      s.p2_time = data.player2_time_remaining;
+      setScore(s.score);
+      setOpponentScore(s.opponentScore);
+      setP1Time(s.p1_time);
+      setP2Time(s.p2_time);
+    }
+  }, [matchId]);
+
+  useEffect(() => {
+    if (mode === '1v1' && matchId) {
+      fetchMatchState();
+
+      // Subscribe to match updates
+      const channel = supabase
+        .channel(`game:${matchId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
+          const s = stateRef.current;
+          s.food = payload.new.current_apple_pos;
+          s.score = payload.new.player1_score; 
+          s.opponentScore = payload.new.player2_score;
+          s.p1_time = payload.new.player1_time_remaining;
+          s.p2_time = payload.new.player2_time_remaining;
+          setScore(s.score);
+          setOpponentScore(s.opponentScore);
+          setP1Time(s.p1_time);
+          setP2Time(s.p2_time);
+
+          if (payload.new.status === 'finished') {
+            s.alive = false;
+            setAlive(false);
+          }
+        })
+        .subscribe();
+
+      // Periodic timer tick call (Phase 4B)
+      const tickTimer = setInterval(async () => {
+        await supabase.functions.invoke('game_tick', { body: { match_id: matchId } });
+      }, 5000);
+
+      return () => {
+        supabase.removeChannel(channel);
+        clearInterval(tickTimer);
+      };
+    }
+  }, [mode, matchId, fetchMatchState]);
 
   const randomFood = useCallback((snake: Pos[]): Pos => {
     let f: Pos;
@@ -42,6 +110,7 @@ export default function SnakeScreen() {
   }, []);
 
   const reset = useCallback(() => {
+    if (mode === '1v1') return; // Cannot manual reset in 1v1
     const s = stateRef.current;
     s.snake = [{ x: 10, y: 10 }];
     s.dir = "RIGHT";
@@ -53,7 +122,7 @@ export default function SnakeScreen() {
     setScore(0);
     setAlive(true);
     setStarted(true);
-  }, [randomFood]);
+  }, [randomFood, mode]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -131,10 +200,7 @@ export default function SnakeScreen() {
       ctx.fillText("GAME OVER", W / 2, H / 2 - 20);
       ctx.fillStyle = "#e2e8f0";
       ctx.font = "bold 16px Consolas, monospace";
-      ctx.fillText(`Score: ${s.score}`, W / 2, H / 2 + 14);
-      ctx.fillStyle = "#4ade80";
-      ctx.font = "bold 13px Consolas, monospace";
-      ctx.fillText("Press SPACE or click Restart", W / 2, H / 2 + 44);
+      ctx.fillText(`Final Score: ${s.score}`, W / 2, H / 2 + 14);
     }
 
     // Start screen
@@ -144,16 +210,22 @@ export default function SnakeScreen() {
       ctx.textAlign = "center";
       ctx.fillStyle = "#4ade80";
       ctx.font = "bold 26px Consolas, monospace";
-      ctx.fillText("SNAKE", W / 2, H / 2 - 16);
+      ctx.fillText(mode === '1v1' ? "GET READY!" : "SNAKE", W / 2, H / 2 - 16);
       ctx.fillStyle = "#94a3b8";
       ctx.font = "bold 13px Consolas, monospace";
-      ctx.fillText("Press SPACE or click Start", W / 2, H / 2 + 18);
+      ctx.fillText(mode === '1v1' ? "Game starts in a few seconds..." : "Press SPACE or click Start", W / 2, H / 2 + 18);
     }
-  }, []);
+  }, [mode]);
 
-  const tick = useCallback(() => {
+  const tick = useCallback(async () => {
     const s = stateRef.current;
-    if (!s.alive || !s.started) return;
+    if (!s.alive || (!s.started && mode !== '1v1')) return;
+
+    // Auto-start 1v1 if not started
+    if (mode === '1v1' && !s.started) {
+       s.started = true;
+       setStarted(true);
+    }
 
     s.dir = s.nextDir;
     const head = s.snake[0];
@@ -169,6 +241,7 @@ export default function SnakeScreen() {
       s.alive = false;
       setAlive(false);
       draw();
+      // Future: send death event to server
       return;
     }
     // Self collision
@@ -181,15 +254,30 @@ export default function SnakeScreen() {
 
     const ate = nx === s.food.x && ny === s.food.y;
     s.snake = [{ x: nx, y: ny }, ...s.snake];
-    if (!ate) s.snake.pop();
-    else {
-      s.score += 10;
-      setScore(s.score);
-      s.food = randomFood(s.snake);
+    
+    if (!ate) {
+      s.snake.pop();
+    } else {
+      if (mode === 'Solo') {
+        s.score += 10;
+        setScore(s.score);
+        s.food = randomFood(s.snake);
+      } else {
+        // 1v1: Validate with server
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && matchId) {
+          await supabase.rpc('validate_apple_eaten', {
+            p_match_id: matchId,
+            p_player_id: user.id,
+            p_x: nx,
+            p_y: ny
+          });
+        }
+      }
     }
 
     draw();
-  }, [draw, randomFood]);
+  }, [draw, randomFood, mode, matchId]);
 
   useEffect(() => {
     draw();
@@ -249,24 +337,54 @@ export default function SnakeScreen() {
             ← Games
           </Link>
           <h1 className="text-2xl font-black text-white">🐍 Snake</h1>
-          <span className="ml-auto bg-green-500/10 border border-green-500/30 text-green-400 text-[11px] font-black uppercase px-3 py-0.5 rounded-full">
-            Solo
+          <span className={`ml-auto border text-[11px] font-black uppercase px-3 py-0.5 rounded-full ${
+            mode === '1v1' 
+              ? "bg-blue-500/10 border-blue-500/30 text-blue-400" 
+              : "bg-green-500/10 border-green-500/30 text-green-400"
+          }`}>
+            {mode}
           </span>
         </div>
 
-        {/* Score bar */}
-        <div className="flex items-center gap-6 w-full max-w-[560px]">
-          <div className="flex flex-col">
-            <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">Score</span>
-            <span className="text-3xl font-black text-green-400">{score}</span>
+        {/* 1v1 Stats Bar */}
+        {mode === '1v1' && (
+          <div className="grid grid-cols-2 gap-4 w-full max-w-[560px] bg-[#0d1326] border border-white/5 p-4 rounded-xl">
+            <div className="flex flex-col gap-1 border-r border-white/5">
+              <span className="text-[10px] font-black uppercase text-gray-500">You</span>
+              <div className="flex items-center justify-between pr-4">
+                <span className="text-2xl font-black text-green-400">{score}</span>
+                <span className={`text-xs font-mono font-bold ${p1Time < 60 ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                  {Math.floor(p1Time / 60)}:{(p1Time % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 pl-2">
+              <span className="text-[10px] font-black uppercase text-gray-500">Challenger</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-blue-400">{opponentScore}</span>
+                <span className={`text-xs font-mono font-bold ${p2Time < 60 ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                   {Math.floor(p2Time / 60)}:{(p2Time % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
           </div>
-          <button
-            onClick={reset}
-            className="ml-auto px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold transition-all active:scale-95"
-          >
-            Restart
-          </button>
-        </div>
+        )}
+
+        {/* Solo Score bar */}
+        {mode === 'Solo' && (
+          <div className="flex items-center gap-6 w-full max-w-[560px]">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">Score</span>
+              <span className="text-3xl font-black text-green-400">{score}</span>
+            </div>
+            <button
+              onClick={reset}
+              className="ml-auto px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold transition-all active:scale-95"
+            >
+              Restart
+            </button>
+          </div>
+        )}
 
         {/* Canvas */}
         <div className="rounded-2xl overflow-hidden border border-green-500/20 shadow-2xl shadow-green-900/20">

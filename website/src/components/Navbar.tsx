@@ -5,11 +5,13 @@ import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 import { useAuth } from '@/context/AuthContext';
+import { useWallet } from '@/context/WalletContext';
 
 export default function Navbar() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { isLoggedIn, user, logout } = useAuth();
+  const { balance } = useWallet();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const pathname = usePathname();
 
@@ -76,7 +78,7 @@ export default function Navbar() {
                 <div className="text-olos-blue">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/><path d="M18 12H22"/></svg>
                 </div>
-                <span className="text-[13px] font-black tracking-tight text-white">1000 GVT</span>
+                <span className="text-[13px] font-black tracking-tight text-white">{balance.toFixed(2)} GVT</span>
               </Link>
 
               {/* Profile Wrapper */}

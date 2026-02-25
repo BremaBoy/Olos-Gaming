@@ -5,11 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
+import { useWallet } from '@/context/WalletContext';
 
 export default function WalletScreen() {
   const router = useRouter();
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading: isAuthLoading } = useAuth();
+  const { balance, isLoading: isWalletLoading } = useWallet();
+  const isLoading = isAuthLoading || isWalletLoading;
   const [showBalance, setShowBalance] = useState(true);
+
+  console.log('[WalletScreen] Current balance:', balance);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) {
@@ -41,11 +46,11 @@ export default function WalletScreen() {
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-3">Total Balance</p>
               <div className="flex items-baseline gap-2">
                 <h2 className="text-3xl font-black tracking-tight">
-                  {showBalance ? '12,450 GVT`s' : '* * * *'}
+                  {showBalance ? `${balance.toFixed(2)} GVT` : '* * * *'}
                 </h2>
               </div>
               <p className="text-sm font-bold text-gray-500 mt-1">
-                {showBalance ? '≈ $3,112.50' : '≈ * * * *'}
+                {showBalance ? `≈ $${(balance * 0.25).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '≈ * * * *'}
               </p>
             </div>
             <button 

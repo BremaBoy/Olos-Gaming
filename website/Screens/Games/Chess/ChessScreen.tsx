@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import Matchmaking from "@/components/Matchmaking";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SQ = 68; // square size in px
@@ -174,6 +177,10 @@ function aiMove(board: Board): [Sq, Sq] | null {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ChessScreen() {
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode") || "Solo";
+  const matchIdParam = searchParams.get("matchId");
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [board, setBoard] = useState<Board>(initialBoard);
   const [selected, setSelected] = useState<Sq | null>(null);
@@ -183,10 +190,63 @@ export default function ChessScreen() {
   const [winner, setWinner] = useState<Color | null>(null);
   const [inCheck, setInCheck] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
+  const [matchId, setMatchId] = useState<string | null>(matchIdParam);
+  const [playerColor, setPlayerColor] = useState<Color>("w");
+  const [p1Time, setP1Time] = useState(600);
+  const [p2Time, setP2Time] = useState(600);
+  const [opponent, setOpponent] = useState<{ id: string; username: string } | null>(null);
+
   const boardRef = useRef(board);
   const turnRef = useRef(turn);
   boardRef.current = board;
   turnRef.current = turn;
+
+  const fetchMatchState = useCallback(async () => {
+    if (!matchId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = await supabase.from('matches').select('*').eq('id', matchId).single();
+    if (data && user) {
+      if (data.board_state) setBoard(data.board_state);
+      setTurn(data.current_turn === data.player1_id ? "w" : "b");
+      setP1Time(data.player1_time_remaining);
+      setP2Time(data.player2_time_remaining);
+      setPlayerColor(data.player1_id === user.id ? "w" : "b");
+      
+      const oppId = data.player1_id === user.id ? data.player2_id : data.player1_id;
+      setOpponent({ id: oppId, username: `Challenger ${oppId.slice(0, 5)}` });
+    }
+  }, [matchId]);
+
+  useEffect(() => {
+    if (mode === '1v1' && matchId) {
+      fetchMatchState();
+
+      const channel = supabase
+        .channel(`chess:${matchId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
+          if (payload.new.board_state) setBoard(payload.new.board_state);
+          setTurn(payload.new.current_turn === payload.new.player1_id ? "w" : "b");
+          setP1Time(payload.new.player1_time_remaining);
+          setP2Time(payload.new.player2_time_remaining);
+
+          if (payload.new.status === 'finished') {
+            const winColor = payload.new.winner_id === payload.new.player1_id ? "w" : "b";
+            setStatus("checkmate");
+            setWinner(winColor);
+          }
+        })
+        .subscribe();
+
+      const tickTimer = setInterval(async () => {
+        await supabase.functions.invoke('game_tick', { body: { match_id: matchId } });
+      }, 5000);
+
+      return () => {
+        supabase.removeChannel(channel);
+        clearInterval(tickTimer);
+      };
+    }
+  }, [mode, matchId, fetchMatchState]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -201,14 +261,18 @@ export default function ChessScreen() {
 
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
+        // Invert board for black player
+        const dr = playerColor === "w" ? r : 7 - r;
+        const dc = playerColor === "w" ? c : 7 - c;
+
         ctx.fillStyle = (r + c) % 2 === 0 ? LIGHT : DARK;
         ctx.fillRect(c * SQ, r * SQ, SQ, SQ);
 
-        if (selected && selected[0] === r && selected[1] === c) {
+        if (selected && selected[0] === dr && selected[1] === dc) {
           ctx.fillStyle = HLsel;
           ctx.fillRect(c * SQ, r * SQ, SQ, SQ);
         }
-        if (highlights.some(([hr, hc]) => hr === r && hc === c)) {
+        if (highlights.some(([hr, hc]) => hr === dr && hc === dc)) {
           ctx.fillStyle = HLmove;
           ctx.fillRect(c * SQ, r * SQ, SQ, SQ);
           ctx.fillStyle = "rgba(50,180,50,0.6)";
@@ -217,7 +281,7 @@ export default function ChessScreen() {
           ctx.fill();
         }
 
-        const p = boardRef.current[r][c];
+        const p = boardRef.current[dr][dc];
         if (p) {
           ctx.font = `${SQ * 0.72}px serif`;
           ctx.textAlign = "center";
@@ -228,23 +292,25 @@ export default function ChessScreen() {
           ctx.fillText(GLYPHS[p.color][p.type], c * SQ + SQ / 2, r * SQ + SQ / 2);
         }
 
+        // Coordinates
         ctx.fillStyle = (r + c) % 2 === 0 ? DARK : LIGHT;
         ctx.font = "bold 10px Consolas";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        if (c === 0) ctx.fillText(String(8 - r), c * SQ + 3, r * SQ + 3);
+        if (c === 0) ctx.fillText(String(playerColor === "w" ? 8 - r : r + 1), c * SQ + 3, r * SQ + 3);
         ctx.textAlign = "right";
         ctx.textBaseline = "bottom";
-        if (r === 7) ctx.fillText(String.fromCharCode(97 + c), c * SQ + SQ - 3, r * SQ + SQ - 3);
+        if (r === 7) ctx.fillText(String.fromCharCode(playerColor === "w" ? 97 + c : 104 - c), c * SQ + SQ - 3, r * SQ + SQ - 3);
       }
     }
-  }, [selected, highlights]);
+  }, [selected, highlights, playerColor]);
 
   useEffect(() => {
     draw();
   }, [draw, board]);
 
   const reset = () => {
+    if (mode === '1v1') return;
     setBoard(initialBoard());
     setSelected(null);
     setHighlights([]);
@@ -268,7 +334,7 @@ export default function ChessScreen() {
   }, []);
 
   useEffect(() => {
-    if (turn !== "b" || status !== "playing") return;
+    if (mode === '1v1' || turn !== "b" || status !== "playing") return;
     setAiThinking(true);
     const t = setTimeout(() => {
       const move = aiMove(boardRef.current);
@@ -280,15 +346,25 @@ export default function ChessScreen() {
       setAiThinking(false);
     }, 400);
     return () => clearTimeout(t);
-  }, [turn, status, checkEndgame]);
+  }, [turn, status, checkEndgame, mode]);
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (turn !== "w" || status !== "playing" || aiThinking) return;
+  const handleClick = async (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (status !== "playing" || aiThinking) return;
+    if (mode === '1v1' && turn !== playerColor) return;
+    if (mode === 'Solo' && turn !== "w") return;
+
     const rect = canvasRef.current!.getBoundingClientRect();
     const scaleX = W / rect.width;
     const scaleY = H / rect.height;
-    const c = Math.floor(((e.clientX - rect.left) * scaleX) / SQ);
-    const r = Math.floor(((e.clientY - rect.top) * scaleY) / SQ);
+    
+    // Invert click detection for black player
+    let c = Math.floor(((e.clientX - rect.left) * scaleX) / SQ);
+    let r = Math.floor(((e.clientY - rect.top) * scaleY) / SQ);
+    if (mode === '1v1' && playerColor === 'b') {
+      r = 7 - r;
+      c = 7 - c;
+    }
+
     if (!inBounds(r, c)) return;
 
     const b = boardRef.current;
@@ -296,67 +372,132 @@ export default function ChessScreen() {
     if (selected) {
       const move = highlights.find(([hr, hc]) => hr === r && hc === c);
       if (move) {
-        const nb = applyMove(b, selected, move);
-        setBoard(nb);
-        setSelected(null);
-        setHighlights([]);
-        if (!checkEndgame(nb, "b")) setTurn("b");
+        const nb = applyMove(b, selected, [r, c]);
+        
+        if (mode === '1v1') {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && matchId) {
+             const isFinished = checkEndgame(nb, opp(playerColor));
+             await supabase.rpc('perform_game_move', {
+               p_match_id: matchId,
+               p_player_id: user.id,
+               p_move_data: { 
+                 new_board: nb, 
+                 from: selected, 
+                 to: [r, c],
+                 status: isFinished ? 'finished' : 'active'
+               }
+             });
+          }
+        } else {
+          setBoard(nb);
+          setSelected(null);
+          setHighlights([]);
+          if (!checkEndgame(nb, "b")) setTurn("b");
+        }
         return;
       }
     }
 
     const piece = b[r][c];
-    if (piece && piece.color === "w") {
+    if (piece && piece.color === (mode === '1v1' ? playerColor : "w")) {
       setSelected([r, c]);
-      setHighlights(legalMoves(b, r, c, "w"));
+      setHighlights(legalMoves(b, r, c, piece.color));
     } else {
       setSelected(null);
       setHighlights([]);
     }
   };
 
+  if (mode === '1v1' && !matchId) {
+    return (
+      <div className="min-h-screen bg-[#0B1121] flex items-center justify-center p-4">
+        <Matchmaking 
+          game={{ slug: 'chess', title: 'Chess' }} 
+          stake={10} 
+          winnerReceives={18} 
+          onCancel={() => window.location.href = '/games'}
+          onComplete={(id) => setMatchId(id)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0B1121] text-white">
       <Navbar />
       <div className="flex flex-col items-center pt-28 pb-16 px-4 gap-6">
+        {/* Title Bar */}
         <div className="flex items-center gap-4 w-full max-w-[580px]">
           <Link href="/games" className="text-gray-500 hover:text-white transition-colors text-sm font-bold">
             ← Games
           </Link>
           <h1 className="text-2xl font-black text-white">♟ Chess</h1>
-          <span className="ml-auto bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[11px] font-black uppercase px-3 py-0.5 rounded-full">
-            vs AI
+          <span className={`ml-auto border text-[11px] font-black uppercase px-3 py-0.5 rounded-full ${
+            mode === '1v1' ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-green-500/10 border-green-500/30 text-green-400"
+          }`}>
+            {mode}
           </span>
         </div>
 
+        {/* 1v1 Stats Bar */}
+        {mode === '1v1' && (
+          <div className="grid grid-cols-2 gap-4 w-full max-w-[580px] bg-[#0d1326] border border-white/5 p-4 rounded-xl">
+            <div className={`flex flex-col gap-1 border-r border-white/5 ${turn === playerColor ? 'opacity-100' : 'opacity-40'}`}>
+              <span className="text-[10px] font-black uppercase text-gray-500">You ({playerColor === 'w' ? 'White' : 'Black'})</span>
+              <div className="flex items-center justify-between pr-4">
+                <span className="text-2xl font-black text-white">{playerColor === 'w' ? '♔' : '♚'}</span>
+                <span className={`text-xl font-mono font-bold ${ (playerColor === 'w' ? p1Time : p2Time) < 60 ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                   {Math.floor((playerColor === 'w' ? p1Time : p2Time) / 60)}:{((playerColor === 'w' ? p1Time : p2Time) % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+            <div className={`flex flex-col gap-1 pl-2 ${turn !== playerColor ? 'opacity-100' : 'opacity-40'}`}>
+              <span className="text-[10px] font-black uppercase text-gray-500">{opponent?.username || 'Opponent'}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-blue-400">{playerColor === 'w' ? '♚' : '♔'}</span>
+                <span className={`text-xl font-mono font-bold ${ (playerColor === 'w' ? p2Time : p1Time) < 60 ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}>
+                   {Math.floor((playerColor === 'w' ? p2Time : p1Time) / 60)}:{((playerColor === 'w' ? p2Time : p1Time) % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Status Bar */}
         <div className="flex items-center gap-4 w-full max-w-[580px]">
           <div className="flex flex-col">
-            <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">Turn</span>
+            <span className="text-[11px] font-black uppercase text-gray-500 tracking-widest">
+              {status === "playing" ? "Turn" : "Result"}
+            </span>
             <span className={`text-lg font-black ${turn === "w" ? "text-white" : "text-blue-400"}`}>
               {status === "playing"
-                ? turn === "w"
-                  ? "Your Turn (White)"
-                  : aiThinking
+                ? turn === playerColor
+                  ? "Your Turn"
+                  : mode === 'Solo' && aiThinking
                   ? "AI Thinking…"
-                  : "Black's Turn"
+                  : "Opponent's Turn"
                 : status === "checkmate"
-                ? winner === "w"
+                ? winner === playerColor
                   ? "🎉 You Win! Checkmate!"
-                  : "😞 AI Wins! Checkmate!"
+                  : "😞 You Lose! Checkmate!"
                 : "🤝 Stalemate — Draw"}
             </span>
             {inCheck && status === "playing" && (
               <span className="text-red-400 text-xs font-bold mt-0.5">⚠ In Check!</span>
             )}
           </div>
-          <button
-            onClick={reset}
-            className="ml-auto px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition-all active:scale-95"
-          >
-            New Game
-          </button>
+          {mode === 'Solo' && (
+            <button
+              onClick={reset}
+              className="ml-auto px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition-all active:scale-95"
+            >
+              New Game
+            </button>
+          )}
         </div>
 
+        {/* Board */}
         <div
           className={`rounded-xl overflow-hidden border shadow-2xl transition-all ${
             inCheck && status === "playing"
@@ -375,7 +516,9 @@ export default function ChessScreen() {
         </div>
 
         <p className="text-gray-500 text-xs font-bold text-center">
-          Click a piece to select · Click a green dot to move · Auto-promotes Pawn → Queen
+          {mode === '1v1' 
+            ? "10 minutes per player · Timer runs while it's your turn" 
+            : "Click a piece to select · Click a green dot to move · Auto-promotes Pawn → Queen"}
         </p>
       </div>
     </div>

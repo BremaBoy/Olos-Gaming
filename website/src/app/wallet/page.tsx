@@ -1,6 +1,6 @@
 'use client';
 
-import WalletScreen from '../../../Screens/Wallet/WalletScreen';
+import WalletScreen from '../../../Screens/wallet/WalletScreen';
 
 export default function WalletPage() {
   return <WalletScreen />;
