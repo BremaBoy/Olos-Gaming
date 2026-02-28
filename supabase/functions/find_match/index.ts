@@ -16,7 +16,7 @@ serve(async (req) => {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } }
     )
 
     // 1. Get current user
@@ -45,8 +45,8 @@ serve(async (req) => {
       status: 200,
     })
 
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || String(error) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     })
