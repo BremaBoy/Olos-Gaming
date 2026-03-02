@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
+import { ConnectWalletButton } from '@/components/ConnectWalletButton';
+import { useAppKitAccount } from '@reown/appkit/react';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { isLoggedIn, user, isLoading } = useAuth();
+  const { isConnected, address } = useAppKitAccount();
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) {
@@ -42,6 +45,28 @@ export default function ProfileScreen() {
           <button className="px-10 py-3.5 rounded-xl bg-[#3B82F6] hover:bg-[#2563EB] text-white text-[13px] font-black uppercase tracking-widest transition-all active:scale-[0.98] shadow-lg shadow-blue-500/20">
             Find a Match
           </button>
+        </div>
+
+        {/* Wallet Connection Section */}
+        <div className="bg-[#0B1121]/40 border border-white/10 rounded-2xl p-8 mb-8">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-[#3B82F6] mb-2">Web3 Wallet</h2>
+              <p className="text-gray-400 text-sm">
+                {isConnected 
+                  ? "Your wallet is connected and ready for staking" 
+                  : "Connect your wallet to enable staking and blockchain features"}
+              </p>
+              {isConnected && address && (
+                <p className="text-xs text-gray-500 mt-2 font-mono">
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                </p>
+              )}
+            </div>
+            <div className="w-full md:w-auto">
+              <ConnectWalletButton variant="page" />
+            </div>
+          </div>
         </div>
 
         {/* Stats Grid */}

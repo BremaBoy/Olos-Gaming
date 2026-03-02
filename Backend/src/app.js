@@ -14,7 +14,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     
     // Allow any localhost origin for local development
-    if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin) || origin === process.env.frontend_URL) {
+    if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin) || origin === process.env.FRONTEND_URL) {
       return callback(null, true);
     }
     
