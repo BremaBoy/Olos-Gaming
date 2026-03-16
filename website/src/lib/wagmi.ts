@@ -1,6 +1,6 @@
 import { cookieStorage, createStorage } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { mainnet, arbitrum, polygon, base, type AppKitNetwork } from "@reown/appkit/networks";
+import { sepolia, type AppKitNetwork } from "@reown/appkit/networks";
 
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID;
 
@@ -8,7 +8,9 @@ if (!projectId) {
   throw new Error("NEXT_PUBLIC_REOWN_PROJECT_ID is not set");
 }
 
-export const networks = [mainnet, arbitrum, polygon, base] as [AppKitNetwork, ...AppKitNetwork[]];
+// MVP: Sepolia testnet only.
+
+export const networks = [sepolia] as [AppKitNetwork, ...AppKitNetwork[]];
 
 export const wagmiAdapter = new WagmiAdapter({
   storage: createStorage({

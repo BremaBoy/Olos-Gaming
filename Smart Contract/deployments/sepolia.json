@@ -1,0 +1,26 @@
+{
+  "network": "sepolia",
+  "deployedAt": "2026-03-16T00:45:26.322Z",
+  "contracts": {
+    "GVTToken": {
+      "address": "0xDE0Bd309CbCaf5E6fBc7e05660E7BCb83520C3fC",
+      "args": [
+        "0x329843dD1d87FA2c793A6554d997CBb97676D4cb"
+      ]
+    },
+    "OlosMatchRegistry": {
+      "address": "0x36206DA73098ca9CcD0963E6416F5A777b4D7B76",
+      "args": [
+        "0x329843dD1d87FA2c793A6554d997CBb97676D4cb"
+      ]
+    },
+    "OlosEscrow": {
+      "address": "0xb13Cf72a4c1C2Da55e2C42E27E8Bd859C9f2A800",
+      "args": [
+        "0xDE0Bd309CbCaf5E6fBc7e05660E7BCb83520C3fC",
+        "0x329843dD1d87FA2c793A6554d997CBb97676D4cb",
+        "0x329843dD1d87FA2c793A6554d997CBb97676D4cb"
+      ]
+    }
+  }
+}
