@@ -69,13 +69,23 @@ const login = async (req, res) => {
       user: data.user
     });
   } catch (error) {
-    console.error('[Backend] Login error:', error);
+    const errorMsg = error.message || '';
+    console.error('[Backend] Login error details:', {
+      message: errorMsg,
+      name: error.name,
+      code: error.code,
+      stack: error.stack
+    });
+    
     res.status(401).json({
       success: false,
-      message: error.message === 'fetch failed' 
-        ? 'Backend failed to connect to Supabase. Check Render env variables.' 
-        : (error.message || 'Login failed'),
-      debug: process.env.NODE_ENV !== 'production' ? { stack: error.stack, name: error.name } : undefined
+      message: errorMsg.toLowerCase().includes('fetch failed') 
+        ? 'Backend Connectivity Error: Render cannot reach Supabase. Check your Supabase URL in Render settings.' 
+        : (errorMsg || 'Login failed'),
+      debug: { 
+        hint: 'This error happened on the Render backend server.',
+        originalError: errorMsg
+      }
     });
   }
 };
