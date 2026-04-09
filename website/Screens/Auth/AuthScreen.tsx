@@ -81,7 +81,12 @@ export default function AuthScreen() {
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.message || 'Something went wrong');
+          console.error('[AuthScreen] Response not OK:', {
+            status: response.status,
+            statusText: response.statusText,
+            data
+          });
+          throw new Error(data.message || `Error ${response.status}: ${response.statusText}`);
         }
 
         setSuccessMessage(isSignUp ? 'Registration successful! You can now sign in.' : 'Login successful!');
@@ -106,6 +111,7 @@ export default function AuthScreen() {
           setTimeout(() => setIsSignUp(false), 2000);
         }
       } catch (error: any) {
+        console.error('[AuthScreen] Submit Exception:', error);
         setServerError(error.message);
       } finally {
         setIsLoading(false);
