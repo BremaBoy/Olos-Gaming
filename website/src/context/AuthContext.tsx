@@ -47,12 +47,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Session verified for:', verifiedUser.email);
           
           // Fetch additional profile data (especially wallet_address)
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('wallet_address, full_name, username')
             .eq('id', verifiedUser.id)
-            .single();
+            .maybeSingle();
 
+          if (profileError) {
+            console.error('[AuthContext] Error fetching profile:', {
+              message: profileError.message,
+              code: profileError.code,
+              details: profileError.details,
+              hint: profileError.hint
+            });
+          }
+          
           setUser({
             id: verifiedUser.id,
             email: verifiedUser.email!,
