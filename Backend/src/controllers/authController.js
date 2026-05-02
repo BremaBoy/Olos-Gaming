@@ -77,15 +77,15 @@ const login = async (req, res) => {
       stack: error.stack
     });
     
+    // Do NOT leak internal error details to clients. Log full details server-side and
+    // return a generic, actionable message.
+    const clientMessage = errorMsg.toLowerCase().includes('fetch failed')
+      ? 'Backend connectivity error. Please try again later.'
+      : (errorMsg || 'Login failed');
+
     res.status(401).json({
       success: false,
-      message: errorMsg.toLowerCase().includes('fetch failed') 
-        ? 'Backend Connectivity Error: Render cannot reach Supabase. Check your Supabase URL in Render settings.' 
-        : (errorMsg || 'Login failed'),
-      debug: { 
-        hint: 'This error happened on the Render backend server.',
-        originalError: errorMsg
-      }
+      message: clientMessage
     });
   }
 };
