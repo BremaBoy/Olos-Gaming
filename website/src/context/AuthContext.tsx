@@ -17,8 +17,10 @@ interface AuthContextType {
   session: any | null;
   isLoggedIn: boolean;
   isLoading: boolean;
+  needsUsername: boolean;
   login: (data: { user: User; session: any }) => void;
   logout: () => void;
+  completeUsername: (username: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsUsername, setNeedsUsername] = useState(false);
   const { disconnect } = useDisconnect();
   const { address, isConnected } = useAppKitAccount();
 
@@ -52,34 +55,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // For OAuth users (Google etc.), upsert profile if it doesn't exist yet
       const isOAuthUser = !!verifiedUser.app_metadata?.provider && verifiedUser.app_metadata.provider !== 'email';
       if (isOAuthUser && !profile) {
+        // Insert without a username — user will be prompted via the modal
         const { error: upsertError } = await supabase
           .from('profiles')
           .upsert({
             id: verifiedUser.id,
             full_name: verifiedUser.user_metadata?.full_name || verifiedUser.user_metadata?.name || '',
-            username: verifiedUser.user_metadata?.preferred_username ||
-                      verifiedUser.user_metadata?.user_name ||
-                      (verifiedUser.email?.split('@')[0] ?? ''),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'id' });
 
         if (upsertError) {
           console.error('[AuthContext] OAuth profile upsert error:', upsertError.message);
         } else {
-          console.log('[AuthContext] OAuth profile upserted successfully');
+          console.log('[AuthContext] OAuth profile upserted (no username yet)');
         }
       }
+
+      // Flag if the user still has no username so the modal can prompt them
+      const resolvedUsername = profile?.username || null;
+      const missingUsername = isOAuthUser && !resolvedUsername;
 
       const userData: User = {
         id: verifiedUser.id,
         email: verifiedUser.email!,
         fullName: profile?.full_name || verifiedUser.user_metadata?.full_name || verifiedUser.user_metadata?.name,
-        username: profile?.username || verifiedUser.user_metadata?.preferred_username || verifiedUser.user_metadata?.user_name || verifiedUser.email?.split('@')[0],
+        username: profile?.username || undefined,
         walletAddress: profile?.wallet_address,
       };
 
       setUser(userData);
       setSession(currentSession);
+      setNeedsUsername(missingUsername ?? false);
       localStorage.setItem('olos_user', JSON.stringify(userData));
       localStorage.setItem('olos_session', JSON.stringify(currentSession));
       setIsLoading(false);
@@ -212,6 +218,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const completeUsername = (username: string) => {
+    setNeedsUsername(false);
+    setUser(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, username };
+      localStorage.setItem('olos_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const logout = async () => {
     try {
       // Call Supabase signOut first while session is still in memory/local storage
@@ -245,8 +261,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session, 
       isLoggedIn: !!user, 
       isLoading,
+      needsUsername,
       login,
-      logout
+      logout,
+      completeUsername,
     }}>
       {children}
     </AuthContext.Provider>
