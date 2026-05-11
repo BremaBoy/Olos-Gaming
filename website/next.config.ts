@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'https://olosgaming.onrender.com/api/:path*',
+        destination: 'http://localhost:5000/api/:path*',
       },
     ]
   },
