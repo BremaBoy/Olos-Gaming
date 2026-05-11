@@ -3,16 +3,13 @@
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import UsernameModal from "@/components/UsernameModal";
+
 
 export default function HomeScreen() {
   const { needsUsername, completeUsername } = useAuth();
   return (
     <div className="min-h-screen bg-[#0B1121] text-white selection:bg-olos-blue/30 overflow-x-hidden">
-      {/* Username setup modal for Google users */}
-      {needsUsername && (
-        <UsernameModal onComplete={completeUsername} />
-      )}
+
       <Navbar />
       
       {/* Hero Section */}
