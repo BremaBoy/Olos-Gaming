@@ -1,5 +1,3 @@
-'use client';
-
 import type { Metadata } from "next";
 import { Inter, Outfit, Bai_Jamjuree } from "next/font/google";
 import "./globals.css";
@@ -51,8 +49,7 @@ export default async function RootLayout({
 
 import { Inter, Outfit, Bai_Jamjuree } from "next/font/google";
 import "./globals.css";
-import UsernameModal from '@/components/UsernameModal';
-import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { Web3Providers } from "./providers";
 import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";

@@ -25,33 +25,13 @@ export default function UsernameModal({ onComplete }: UsernameModalProps) {
 
     const trimmed = username.trim().toLowerCase();
 
-    // Check if username is already taken
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', trimmed)
-      .maybeSingle();
+    // Directly accept the username without persisting to DB
+    onComplete(trimmed);
+    setIsLoading(false);
+    // Reset state (optional)
+    setUsername('');
+    // Close modal is handled by parent via needsUsername flag
 
-    if (existing) {
-      setError('That username is already taken. Please try another.');
-      setIsLoading(false);
-      return;
-    }
-
-    // Update the profile in Supabase
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .upsert({
-        id: user.id,
-        username: trimmed,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-
-    if (updateError) {
-      setError(updateError.message || 'Failed to save username. Please try again.');
-      setIsLoading(false);
-      return;
-    }
 
     onComplete(trimmed);
   };
